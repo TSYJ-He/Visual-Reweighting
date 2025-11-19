@@ -1,0 +1,237 @@
+# ================================
+# MTRL 训练配置示例 
+# Multi-Modal Token-level Reinforcement Learning
+# ================================
+# 注意！！！！这个文件是纯AI生成的！！！！
+# ==================== 数据集配置 ====================
+dataset:
+  # 数据文件路径（支持 JSONL 格式）
+  train_files: "data/train.jsonl"
+  val_files: "data/val.jsonl"
+  
+  # 数据字段映射
+  prompt_key: "prompt"      # 输入提示字段
+  answer_key: "answer"      # 参考答案字段
+  image_key: "images"       # 图片路径字段
+  video_key: "videos"       # 视频路径字段
+  
+  # 多模态配置
+  image_dir: "data/images"  # 图片目录
+  video_fps: 2.0           # 视频采样帧率
+  min_pixels: 262144       # 最小像素 (512x512)
+  max_pixels: 4194304      # 最大像素 (2048x2048)
+  
+  # 序列长度
+  max_prompt_length: 512
+  max_response_length: 512
+  
+  # 批处理
+  rollout_batch_size: 256
+  val_batch_size: 64
+  
+  # 数据处理
+  shuffle: true
+  seed: 42
+  filter_overlong_prompts: true
+
+# ==================== 训练配置 ====================
+training:
+  # 训练轮数和步数
+  total_epochs: 10
+  max_steps: null  # 如果设置，将覆盖 total_epochs
+  
+  # 实验信息
+  project_name: "mtrl_training"
+  experiment_name: "qwen2_vl_7b_tprl"
+  
+  # 日志系统
+  logger: ["console", "wandb"]  # 可选: console, wandb, tensorboard, mlflow
+  
+  # 分布式配置
+  nnodes: 1
+  n_gpus_per_node: 8
+  
+  # 保存和验证
+  save_freq: 500           # 每 N 步保存一次
+  val_freq: 100           # 每 N 步验证一次
+  save_limit: 5           # 最多保存 N 个检查点
+  save_model_only: false  # 是否只保存模型（不保存优化器状态）
+  
+  # 检查点路径
+  save_checkpoint_path: null  # 默认: checkpoints/{project_name}/{experiment_name}
+  load_checkpoint_path: null  # 断点续训路径
+  find_last_checkpoint: true  # 自动寻找最新检查点
+  
+  # 验证配置
+  val_before_train: true
+  val_only: false
+  val_generations_to_log: 10
+
+# ==================== 优化配置 ====================
+optimization:
+  # ============ 基础强化学习参数 ============
+  gamma: 1.0              # 折扣因子
+  lam: 0.95              # GAE lambda 参数
+  advantage_estimator: "gae"  # 优势估计器: gae, grpo, rloo, remax, reinforce_plus_plus
+  
+  # ============ KL 散度控制 ============
+  disable_divergence: false         # 是否禁用参考模型
+  use_divergence_loss: false        # 使用散度损失（而非奖励惩罚）
+  divergence_penalty: "kl"          # 散度类型: kl, abs, mse, low_var_kl, full
+  divergence_coef: 0.01            # 散度系数
+  divergence_type: "adaptive"       # 控制器类型: fixed, adaptive
+  divergence_target: 6.0           # 自适应目标散度
+  divergence_horizon: 10000.0      # 自适应时间范围
+  
+  # ============ 在线样本过滤 ============
+  online_filtering: false          # 启用在线过滤
+  filter_key: "overall"            # 过滤键
+  filter_low: 0.01                # 过滤低于此分位数的样本
+  filter_high: 0.99               # 过滤高于此分位数的样本
+  
+  # ============ TPRL 核心算法 ============
+  # Token Gradient Filtering (TGF) - 微观级优化
+  
+  # 1. 熵过滤：基于 token 熵值选择高不确定性的 token
+  enable_entropy_filtering: true    # 启用熵过滤
+  top_p_entropy_tokens: 0.2        # 选择 top 20% 高熵 token
+  
+  # 2. 感知过滤：基于视觉依赖度选择视觉相关的 token
+  enable_perception_filtering: true # 启用感知过滤
+  top_p_perception_tokens: 0.2     # 选择 top 20% 视觉相关 token
+  
+  # Trajectory Advantage Shaping (TAS) - 宏观级优化
+  
+  # 3. 轨迹重加权：基于整体视觉敏感度调整轨迹优势
+  enable_trajectory_reweighting: true  # 启用轨迹重加权
+  trajectory_scaling_min: 0.8          # 最小缩放因子 (0.0-1.0)
+  
+  # ============ 熵正则化 ============
+  use_entropy_penalty: false       # 启用熵惩罚
+  entropy_penalty_coef: 0.06       # 熵惩罚系数
+
+# ==================== Worker 配置 ====================
+worker:
+  # 混合引擎模式（同时使用训练和推理引擎）
+  hybrid_engine: true
+  
+  # ============ Actor (策略网络) 配置 ============
+  actor:
+    # 模型配置
+    model:
+      model_path: "Qwen/Qwen2-VL-7B-Instruct"
+      tokenizer_path: null  # 默认与 model_path 相同
+      trust_remote_code: true
+      enable_gradient_checkpointing: true  # 梯度检查点（节省显存）
+      freeze_vision_tower: false
+    
+    # 优化器配置
+    optim:
+      lr: 5e-7                    # 学习率
+      betas: [0.9, 0.95]         # Adam beta 参数
+      weight_decay: 0.01         # 权重衰减
+      strategy: "adamw"          # 优化器: adamw
+      lr_warmup_ratio: 0.0       # 预热比例
+      lr_warmup_steps: 10        # 预热步数
+      warmup_style: "constant"   # 预热方式: constant, linear
+    
+    # FSDP 配置
+    fsdp:
+      enable_full_shard: true         # 启用全分片
+      enable_cpu_offload: false       # CPU offload（慢但省显存）
+      enable_rank0_init: true         # Rank 0 初始化
+      use_orig_params: false
+      torch_dtype: null
+      mp_param_dtype: "bf16"          # 混合精度参数类型
+      mp_reduce_dtype: "fp32"         # 梯度规约类型
+      mp_buffer_dtype: "fp32"         # 缓冲区类型
+    
+    # 参数和优化器 Offload
+    offload:
+      offload_params: false           # 参数 offload
+      offload_optimizer: false        # 优化器 offload
+    
+    # 训练超参数
+    strategy: "fsdp"
+    global_batch_size: 256                      # 全局批次大小
+    micro_batch_size_per_device_for_update: 2   # 每卡更新批次
+    micro_batch_size_per_device_for_experience: 8  # 每卡推理批次
+    ppo_epochs: 1                               # PPO 更新轮数
+    
+    # PPO 裁剪参数
+    clip_ratio_low: 0.2                         # 下界裁剪比率
+    clip_ratio_high: 0.3                        # 上界裁剪比率（DAPO）
+    clip_ratio_dual: 3.0                        # 双重裁剪常数 C
+    
+    # 损失配置
+    loss_avg_mode: "token"                      # 损失平均模式: token, seq
+    loss_type: "default"                        # 损失类型: default, gspo, cispo
+    
+    # 其他训练参数
+    max_grad_norm: 1.0                          # 梯度裁剪
+    padding_free: true                          # Padding-free 训练
+    dynamic_batching: true                      # 动态批处理
+    ulysses_size: 1                            # Ulysses 序列并行大小
+    use_torch_compile: true                     # 使用 torch.compile 加速
+  
+  # ============ Critic (价值网络) 配置 ============
+  critic:
+    enable: false  # 是否启用 Critic（对于 PPO 是可选的）
+    # 如果启用，配置类似 actor
+  
+  # ============ Reference Model 配置 ============
+  ref:
+    # 参考模型默认继承 actor 的部分配置
+    enable: true
+  
+  # ============ Rollout (生成) 配置 ============
+  rollout:
+    name: "vllm"                        # 推理引擎: vllm
+    gpu_memory_utilization: 0.4         # GPU 显存利用率
+    
+    # 生成参数
+    temperature: 1.0                    # 采样温度
+    top_p: 1.0                         # nucleus 采样
+    top_k: -1                          # top-k 采样 (-1 禁用)
+    repetition_penalty: 1.0            # 重复惩罚
+    
+    # vLLM 特定配置
+    tensor_parallel_size: 1            # 张量并行大小
+    enable_prefix_caching: false       # 前缀缓存
+    enforce_eager: false               # 强制 eager 模式
+    max_num_seqs: 256                  # 最大并发序列数
+  
+  # ============ Reward (奖励) 配置 ============
+  reward:
+    reward_type: "function"             # 奖励类型: function, model
+    reward_fn_path: "reward_function.py"  # 奖励函数路径
+    num_cpus: 4                        # CPU 核心数
+
+# ==================== 注释和说明 ====================
+# 
+# TPRL 算法使用指南:
+# 
+# 1. Token Gradient Filtering (TGF):
+#    - enable_entropy_filtering: 识别模型不确定的 token
+#    - enable_perception_filtering: 识别依赖视觉信息的 token
+#    - 两者可以同时启用，会取并集
+# 
+# 2. Trajectory Advantage Shaping (TAS):
+#    - enable_trajectory_reweighting: 基于整体敏感度重加权
+#    - trajectory_scaling_min 控制最小缩放因子（越小差异越大）
+# 
+# 3. 超参数调优建议:
+#    - top_p_*_tokens: 0.1-0.3 之间（0.2 是较好的起点）
+#    - trajectory_scaling_min: 0.6-0.9 之间（0.8 是较好的起点）
+#    - 如果训练不稳定，增大 trajectory_scaling_min
+#    - 如果想要更强的视觉理解，增大 top_p_perception_tokens
+# 
+# 4. 显存优化:
+#    - 如果 OOM，尝试: 减小 micro_batch_size、启用 gradient_checkpointing
+#    - 极端情况: 启用 cpu_offload 和 offload_params/offload_optimizer
+# 
+# 5. 速度优化:
+#    - 确保 padding_free=true 和 dynamic_batching=true
+#    - 使用 bf16 混合精度
+#    - 增大 batch_size（如果显存允许）
+
