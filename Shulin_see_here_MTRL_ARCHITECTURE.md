@@ -105,17 +105,6 @@ def random_patch_blackening(pil_img, patch_size=14, black_prob=0.5):
     return Image.fromarray(img.astype(np.uint8))
 ```
 
-**工作原理**:
-1. 将图像划分为 $14 \times 14$ 的补丁（patches）
-2. 以 0.5 的概率随机将补丁涂黑（置零）
-3. 生成扰动图像 $I'$
-
-**为什么使用随机块遮挡？**
-- 比高斯噪声或模糊更能模拟"局部视觉信息缺失"
-- 迫使模型进行鲁棒的局部推理
-- 保留部分视觉信息，避免完全信息缺失
-
-#### 应用位置
 
 **文件**: `mtrl/workers/fsdp_workers.py`
 
@@ -527,19 +516,11 @@ TPRL 算法的主要开销：
 
 ## 总结
 
-MTRL 框架通过三个关键环节实现了 Token Perception Reinforcement Learning：
+MTRL 框架通过三个环节实现了 Token Perception Reinforcement Learning：
 
 1. **图像扰动** (`perc_utils.py` + `fsdp_workers.py`): 生成扰动图像作为对照组
 2. **分布对比** (`fsdp_workers.py` + `policy_optimization.py`): 计算视觉依赖度
 3. **筛选定位** (`parallel_policy_agent.py`): 识别并优化 Visual Token
 
-这种设计使得模型能够：
-- ✅ 自动识别视觉依赖的 token
-- ✅ 重点优化关键位置
-- ✅ 提升多模态任务的性能
-- ✅ 保持训练效率（仅增加一次前向传播）
 
----
-
-**参考**: 本实现基于论文中的 Token Perception Reinforcement Learning 算法，通过代码级别的实现验证了算法的有效性。
 
